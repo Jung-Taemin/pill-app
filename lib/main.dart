@@ -3,7 +3,7 @@ import 'package:table_calendar/table_calendar.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:timezone/data/latest.dart' as tz;
-import 'package:timezone/timezone.dart' as tz;
+import 'package:flutter_localizations/flutter_localizations.dart';
 
 final FlutterLocalNotificationsPlugin notifications =
     FlutterLocalNotificationsPlugin();
@@ -24,9 +24,26 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const MaterialApp(
+    return MaterialApp(
       debugShowCheckedModeBanner: false,
-      home: HomePage(),
+
+      /// ⭐⭐⭐ 한글 로케일 설정 (이게 핵심)
+      locale: const Locale('ko', 'KR'),
+
+      supportedLocales: const [Locale('ko', 'KR'), Locale('en', 'US')],
+
+      localizationsDelegates: const [
+        GlobalMaterialLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+        GlobalCupertinoLocalizations.delegate,
+      ],
+
+      theme: ThemeData(
+        useMaterial3: true,
+        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF6C63FF)),
+        scaffoldBackgroundColor: const Color(0xFFF9F9FB),
+      ),
+      home: const HomePage(),
     );
   }
 }
@@ -44,13 +61,6 @@ class _HomePageState extends State<HomePage> {
   int pillDays = 21;
   int breakDays = 7;
 
-  final TextEditingController pillController = TextEditingController(
-    text: '21',
-  );
-  final TextEditingController breakController = TextEditingController(
-    text: '7',
-  );
-
   DateTime focusedDay = DateTime.now();
   DateTime? selectedDay;
 
@@ -60,16 +70,11 @@ class _HomePageState extends State<HomePage> {
     _loadSettings();
   }
 
-  // 🔹 저장된 설정 불러오기
   Future<void> _loadSettings() async {
     final prefs = await SharedPreferences.getInstance();
     setState(() {
       pillDays = prefs.getInt('pillDays') ?? 21;
       breakDays = prefs.getInt('breakDays') ?? 7;
-
-      pillController.text = pillDays.toString();
-      breakController.text = breakDays.toString();
-
       final millis = prefs.getInt('startDate');
       if (millis != null) {
         startDate = DateTime.fromMillisecondsSinceEpoch(millis);
@@ -77,7 +82,6 @@ class _HomePageState extends State<HomePage> {
     });
   }
 
-  // 🔹 설정 저장
   Future<void> _saveSettings() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setInt('pillDays', pillDays);
@@ -91,23 +95,43 @@ class _HomePageState extends State<HomePage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('약 복용 달력'),
+        title: const Text(
+          '약 복용 달력',
+          style: TextStyle(fontWeight: FontWeight.bold),
+        ),
+        centerTitle: true,
+        backgroundColor: Colors.transparent,
+        elevation: 0,
         actions: [
           IconButton(
-            icon: const Icon(Icons.settings),
+            icon: const Icon(Icons.tune),
             onPressed: _openPatternSelector,
           ),
         ],
       ),
       body: Column(
         children: [
-          const SizedBox(height: 8),
-          ElevatedButton(onPressed: _pickDate, child: const Text('복용 시작일 선택')),
-          const SizedBox(height: 8),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: ElevatedButton.icon(
+              icon: const Icon(Icons.calendar_month),
+              label: const Text('복용 시작일 선택'),
+              style: ElevatedButton.styleFrom(
+                minimumSize: const Size.fromHeight(48),
+              ),
+              onPressed: _pickDate,
+            ),
+          ),
+          const SizedBox(height: 12),
+
+          /// 📅 네모 + 붙어있는 달력
           TableCalendar(
+            locale: 'ko_KR',
+
             firstDay: DateTime.utc(2020, 1, 1),
             lastDay: DateTime.utc(2035, 12, 31),
             focusedDay: focusedDay,
+            rowHeight: 48,
             selectedDayPredicate: (day) => isSameDay(selectedDay, day),
             onDaySelected: (selected, focused) {
               setState(() {
@@ -115,20 +139,32 @@ class _HomePageState extends State<HomePage> {
                 focusedDay = focused;
               });
             },
+            headerStyle: const HeaderStyle(
+              titleCentered: true,
+              formatButtonVisible: false,
+            ),
+            daysOfWeekStyle: const DaysOfWeekStyle(
+              weekdayStyle: TextStyle(fontWeight: FontWeight.bold),
+              weekendStyle: TextStyle(fontWeight: FontWeight.bold),
+            ),
             calendarBuilders: CalendarBuilders(
-              defaultBuilder: (context, day, focused) => _buildCell(day),
+              defaultBuilder: (context, day, focused) => _buildSquareCell(day),
               todayBuilder: (context, day, focused) =>
-                  _buildCell(day, isToday: true),
+                  _buildSquareCell(day, isToday: true),
               selectedBuilder: (context, day, focused) =>
-                  _buildSelectedCell(day),
+                  _buildSquareCell(day, isSelected: true),
             ),
           ),
+
           if (selectedDay != null && startDate != null)
             Padding(
-              padding: const EdgeInsets.all(12),
+              padding: const EdgeInsets.all(16),
               child: Text(
                 _getDayText(selectedDay!),
-                style: const TextStyle(fontSize: 18),
+                style: const TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
             ),
         ],
@@ -136,47 +172,36 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  // 📅 달력 셀
-  Widget _buildCell(DateTime day, {bool isToday = false}) {
-    final icon = _getIcon(day);
-    return Container(
-      margin: const EdgeInsets.all(6),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: isToday ? Colors.blue : Colors.grey.shade300,
-          width: isToday ? 2 : 1,
-        ),
-      ),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [Text('${day.day}'), if (icon != null) icon],
-      ),
-    );
-  }
+  /// ⬛ 네모 셀 (핵심)
+  Widget _buildSquareCell(
+    DateTime day, {
+    bool isToday = false,
+    bool isSelected = false,
+  }) {
+    Color bgColor = Colors.white;
+    Color borderColor = Colors.grey.shade400;
 
-  Widget _buildSelectedCell(DateTime day) {
-    final icon = _getIcon(day);
-    return Container(
-      margin: const EdgeInsets.all(6),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.red, width: 2),
-      ),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [Text('${day.day}'), if (icon != null) icon],
-      ),
-    );
-  }
-
-  // 💊 / 💤 아이콘
-  Widget? _getIcon(DateTime day) {
-    if (startDate == null) return null;
     final type = _getDayType(day);
-    if (type == 'pill') return const Icon(Icons.medication, size: 16);
-    if (type == 'break') return const Icon(Icons.hotel, size: 16);
-    return null;
+    if (type == 'pill') {
+      bgColor = const Color(0xFFE3F2FD); // 복용일
+    } else if (type == 'break') {
+      bgColor = const Color(0xFFFFF3E0); // 휴약일
+    }
+
+    if (isSelected) {
+      borderColor = Colors.blue;
+    } else if (isToday) {
+      borderColor = Colors.red;
+    }
+
+    return Container(
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: bgColor,
+        border: Border.all(color: borderColor, width: 1),
+      ),
+      child: Text('${day.day}', style: const TextStyle(fontSize: 14)),
+    );
   }
 
   String _getDayText(DateTime day) {
@@ -186,23 +211,16 @@ class _HomePageState extends State<HomePage> {
     return '';
   }
 
-  // 🧠 핵심 계산 로직
   String _getDayType(DateTime day) {
     if (startDate == null) return 'none';
-
     final start = DateTime(startDate!.year, startDate!.month, startDate!.day);
     final target = DateTime(day.year, day.month, day.day);
-
     final diffDays = target.difference(start).inDays;
     final cycle = pillDays + breakDays;
-
     if (diffDays < 0 || cycle == 0) return 'none';
-    final dayInCycle = diffDays % cycle;
-
-    return dayInCycle < pillDays ? 'pill' : 'break';
+    return diffDays % cycle < pillDays ? 'pill' : 'break';
   }
 
-  // 📆 시작일 선택
   Future<void> _pickDate() async {
     final selected = await showDatePicker(
       context: context,
@@ -212,179 +230,96 @@ class _HomePageState extends State<HomePage> {
     );
 
     if (selected != null) {
-      setState(() {
-        startDate = selected;
-      });
+      setState(() => startDate = selected);
       await _saveSettings();
-      await _scheduleTodayNotification();
     }
   }
 
-  // 🔔 오늘 복용일이면 알림
-  Future<void> _scheduleTodayNotification() async {
-    if (startDate == null) return;
-
-    final now = DateTime.now();
-    if (_getDayType(now) != 'pill') return;
-
-    final scheduledTime = tz.TZDateTime(
-      tz.local,
-      now.year,
-      now.month,
-      now.day,
-      21,
-      0,
-    );
-
-    if (scheduledTime.isBefore(tz.TZDateTime.now(tz.local))) return;
-
-    await notifications.zonedSchedule(
-      0,
-      '약 복용 알림 💊',
-      '오늘 약 먹을 시간이에요!',
-      scheduledTime,
-      const NotificationDetails(
-        android: AndroidNotificationDetails(
-          'pill_channel',
-          'Pill Reminder',
-          importance: Importance.max,
-          priority: Priority.high,
-        ),
-      ),
-      androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
-      uiLocalNotificationDateInterpretation:
-          UILocalNotificationDateInterpretation.absoluteTime,
-      matchDateTimeComponents: DateTimeComponents.time,
-    );
-  }
-
-  // ⚙️ 복용 패턴 선택 + 직접 설정
   void _openPatternSelector() {
-    final TextEditingController pillController = TextEditingController(
-      text: pillDays.toString(),
-    );
-    final TextEditingController breakController = TextEditingController(
-      text: breakDays.toString(),
-    );
+    final pillCtrl = TextEditingController(text: pillDays.toString());
+    final breakCtrl = TextEditingController(text: breakDays.toString());
 
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      builder: (context) {
-        return Padding(
-          padding: EdgeInsets.only(
-            bottom: MediaQuery.of(context).viewInsets.bottom,
-            left: 16,
-            right: 16,
-            top: 16,
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // 기존 패턴
-              ListTile(
-                title: const Text('21일 복용 / 7일 휴약'),
-                onTap: () async {
-                  setState(() {
-                    pillDays = 21;
-                    breakDays = 7;
-                  });
-                  await _saveSettings();
-                  await _scheduleTodayNotification();
-                  Navigator.pop(context);
-                },
-              ),
-              ListTile(
-                title: const Text('24일 복용 / 4일 휴약'),
-                onTap: () async {
-                  setState(() {
-                    pillDays = 24;
-                    breakDays = 4;
-                  });
-                  await _saveSettings();
-                  await _scheduleTodayNotification();
-                  Navigator.pop(context);
-                },
-              ),
-              ListTile(
-                title: const Text('28일 연속 복용'),
-                onTap: () async {
-                  setState(() {
-                    pillDays = 28;
-                    breakDays = 0;
-                  });
-                  await _saveSettings();
-                  await _scheduleTodayNotification();
-                  Navigator.pop(context);
-                },
-              ),
-
-              const Divider(height: 32),
-
-              // 🔹 직접 설정
-              const Text(
-                '직접 설정',
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-              ),
-
-              const SizedBox(height: 12),
-
-              Row(
-                children: [
-                  Expanded(
-                    child: TextField(
-                      controller: pillController,
-                      keyboardType: TextInputType.number,
-                      decoration: const InputDecoration(
-                        labelText: '복용일수',
-                        suffixText: '일',
-                        border: OutlineInputBorder(),
-                      ),
+      builder: (_) => Padding(
+        padding: EdgeInsets.fromLTRB(
+          16,
+          16,
+          16,
+          MediaQuery.of(context).viewInsets.bottom + 16,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _patternTile('21일 복용 / 7일 휴약', 21, 7),
+            _patternTile('24일 복용 / 4일 휴약', 24, 4),
+            _patternTile('28일 연속 복용', 28, 0),
+            const Divider(),
+            const Text('직접 설정', style: TextStyle(fontWeight: FontWeight.bold)),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: pillCtrl,
+                    keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(
+                      labelText: '복용일수',
+                      suffixText: '일',
+                      border: OutlineInputBorder(),
                     ),
                   ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: TextField(
-                      controller: breakController,
-                      keyboardType: TextInputType.number,
-                      decoration: const InputDecoration(
-                        labelText: '휴약일수',
-                        suffixText: '일',
-                        border: OutlineInputBorder(),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-
-              const SizedBox(height: 16),
-
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(
-                  onPressed: () async {
-                    final pill = int.tryParse(pillController.text);
-                    final rest = int.tryParse(breakController.text);
-
-                    if (pill == null || rest == null || pill <= 0) return;
-
-                    setState(() {
-                      pillDays = pill;
-                      breakDays = rest;
-                    });
-
-                    await _saveSettings();
-                    await _scheduleTodayNotification();
-                    Navigator.pop(context);
-                  },
-                  child: const Text('적용'),
                 ),
-              ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: TextField(
+                    controller: breakCtrl,
+                    keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(
+                      labelText: '휴약일수',
+                      suffixText: '일',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                child: const Text('적용'),
+                onPressed: () async {
+                  final p = int.tryParse(pillCtrl.text);
+                  final b = int.tryParse(breakCtrl.text);
+                  if (p == null || b == null || p <= 0) return;
 
-              const SizedBox(height: 16),
-            ],
-          ),
-        );
+                  setState(() {
+                    pillDays = p;
+                    breakDays = b;
+                  });
+                  await _saveSettings();
+                  Navigator.pop(context);
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _patternTile(String text, int p, int b) {
+    return ListTile(
+      title: Text(text),
+      onTap: () async {
+        setState(() {
+          pillDays = p;
+          breakDays = b;
+        });
+        await _saveSettings();
+        Navigator.pop(context);
       },
     );
   }
