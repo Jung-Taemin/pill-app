@@ -44,6 +44,13 @@ class _HomePageState extends State<HomePage> {
   int pillDays = 21;
   int breakDays = 7;
 
+  final TextEditingController pillController = TextEditingController(
+    text: '21',
+  );
+  final TextEditingController breakController = TextEditingController(
+    text: '7',
+  );
+
   DateTime focusedDay = DateTime.now();
   DateTime? selectedDay;
 
@@ -59,6 +66,9 @@ class _HomePageState extends State<HomePage> {
     setState(() {
       pillDays = prefs.getInt('pillDays') ?? 21;
       breakDays = prefs.getInt('breakDays') ?? 7;
+
+      pillController.text = pillDays.toString();
+      breakController.text = breakDays.toString();
 
       final millis = prefs.getInt('startDate');
       if (millis != null) {
@@ -178,13 +188,15 @@ class _HomePageState extends State<HomePage> {
 
   // 🧠 핵심 계산 로직
   String _getDayType(DateTime day) {
+    if (startDate == null) return 'none';
+
     final start = DateTime(startDate!.year, startDate!.month, startDate!.day);
     final target = DateTime(day.year, day.month, day.day);
 
     final diffDays = target.difference(start).inDays;
     final cycle = pillDays + breakDays;
 
-    if (diffDays < 0) return 'none';
+    if (diffDays < 0 || cycle == 0) return 'none';
     final dayInCycle = diffDays % cycle;
 
     return dayInCycle < pillDays ? 'pill' : 'break';
@@ -213,7 +225,6 @@ class _HomePageState extends State<HomePage> {
     if (startDate == null) return;
 
     final now = DateTime.now();
-
     if (_getDayType(now) != 'pill') return;
 
     final scheduledTime = tz.TZDateTime(
@@ -221,7 +232,7 @@ class _HomePageState extends State<HomePage> {
       now.year,
       now.month,
       now.day,
-      21, // 오후 9시
+      21,
       0,
     );
 
@@ -247,51 +258,132 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  // ⚙️ 복용 패턴 선택
+  // ⚙️ 복용 패턴 선택 + 직접 설정
   void _openPatternSelector() {
+    final TextEditingController pillController = TextEditingController(
+      text: pillDays.toString(),
+    );
+    final TextEditingController breakController = TextEditingController(
+      text: breakDays.toString(),
+    );
+
     showModalBottomSheet(
       context: context,
+      isScrollControlled: true,
       builder: (context) {
-        return Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              title: const Text('21일 복용 / 7일 휴약'),
-              onTap: () async {
-                setState(() {
-                  pillDays = 21;
-                  breakDays = 7;
-                });
-                await _saveSettings();
-                await _scheduleTodayNotification();
-                Navigator.pop(context);
-              },
-            ),
-            ListTile(
-              title: const Text('24일 복용 / 4일 휴약'),
-              onTap: () async {
-                setState(() {
-                  pillDays = 24;
-                  breakDays = 4;
-                });
-                await _saveSettings();
-                await _scheduleTodayNotification();
-                Navigator.pop(context);
-              },
-            ),
-            ListTile(
-              title: const Text('28일 연속 복용'),
-              onTap: () async {
-                setState(() {
-                  pillDays = 28;
-                  breakDays = 0;
-                });
-                await _saveSettings();
-                await _scheduleTodayNotification();
-                Navigator.pop(context);
-              },
-            ),
-          ],
+        return Padding(
+          padding: EdgeInsets.only(
+            bottom: MediaQuery.of(context).viewInsets.bottom,
+            left: 16,
+            right: 16,
+            top: 16,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // 기존 패턴
+              ListTile(
+                title: const Text('21일 복용 / 7일 휴약'),
+                onTap: () async {
+                  setState(() {
+                    pillDays = 21;
+                    breakDays = 7;
+                  });
+                  await _saveSettings();
+                  await _scheduleTodayNotification();
+                  Navigator.pop(context);
+                },
+              ),
+              ListTile(
+                title: const Text('24일 복용 / 4일 휴약'),
+                onTap: () async {
+                  setState(() {
+                    pillDays = 24;
+                    breakDays = 4;
+                  });
+                  await _saveSettings();
+                  await _scheduleTodayNotification();
+                  Navigator.pop(context);
+                },
+              ),
+              ListTile(
+                title: const Text('28일 연속 복용'),
+                onTap: () async {
+                  setState(() {
+                    pillDays = 28;
+                    breakDays = 0;
+                  });
+                  await _saveSettings();
+                  await _scheduleTodayNotification();
+                  Navigator.pop(context);
+                },
+              ),
+
+              const Divider(height: 32),
+
+              // 🔹 직접 설정
+              const Text(
+                '직접 설정',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+              ),
+
+              const SizedBox(height: 12),
+
+              Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: pillController,
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(
+                        labelText: '복용일수',
+                        suffixText: '일',
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: TextField(
+                      controller: breakController,
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(
+                        labelText: '휴약일수',
+                        suffixText: '일',
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+
+              const SizedBox(height: 16),
+
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: () async {
+                    final pill = int.tryParse(pillController.text);
+                    final rest = int.tryParse(breakController.text);
+
+                    if (pill == null || rest == null || pill <= 0) return;
+
+                    setState(() {
+                      pillDays = pill;
+                      breakDays = rest;
+                    });
+
+                    await _saveSettings();
+                    await _scheduleTodayNotification();
+                    Navigator.pop(context);
+                  },
+                  child: const Text('적용'),
+                ),
+              ),
+
+              const SizedBox(height: 16),
+            ],
+          ),
         );
       },
     );
