@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:table_calendar/table_calendar.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -26,18 +27,13 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-
-      /// ⭐⭐⭐ 한글 로케일 설정 (이게 핵심)
       locale: const Locale('ko', 'KR'),
-
       supportedLocales: const [Locale('ko', 'KR'), Locale('en', 'US')],
-
       localizationsDelegates: const [
         GlobalMaterialLocalizations.delegate,
         GlobalWidgetsLocalizations.delegate,
         GlobalCupertinoLocalizations.delegate,
       ],
-
       theme: ThemeData(
         useMaterial3: true,
         colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF6C63FF)),
@@ -57,12 +53,14 @@ class HomePage extends StatefulWidget {
 
 class _HomePageState extends State<HomePage> {
   DateTime? startDate;
-
   int pillDays = 21;
   int breakDays = 7;
 
   DateTime focusedDay = DateTime.now();
   DateTime? selectedDay;
+
+  /// 🔥 날짜별 복용 기록
+  Map<String, bool> takenMap = {};
 
   @override
   void initState() {
@@ -70,14 +68,22 @@ class _HomePageState extends State<HomePage> {
     _loadSettings();
   }
 
+  String _dateKey(DateTime day) => '${day.year}-${day.month}-${day.day}';
+
   Future<void> _loadSettings() async {
     final prefs = await SharedPreferences.getInstance();
     setState(() {
       pillDays = prefs.getInt('pillDays') ?? 21;
       breakDays = prefs.getInt('breakDays') ?? 7;
+
       final millis = prefs.getInt('startDate');
       if (millis != null) {
         startDate = DateTime.fromMillisecondsSinceEpoch(millis);
+      }
+
+      final takenStr = prefs.getString('takenMap');
+      if (takenStr != null) {
+        takenMap = Map<String, bool>.from(jsonDecode(takenStr));
       }
     });
   }
@@ -91,8 +97,27 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
+  Future<void> _saveTakenMap() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('takenMap', jsonEncode(takenMap));
+  }
+
+  Future<void> _toggleTodayTaken() async {
+    final key = _dateKey(DateTime.now());
+    setState(() {
+      if (takenMap[key] == true) {
+        takenMap.remove(key);
+      } else {
+        takenMap[key] = true;
+      }
+    });
+    await _saveTakenMap();
+  }
+
   @override
   Widget build(BuildContext context) {
+    final todayKey = _dateKey(DateTime.now());
+
     return Scaffold(
       appBar: AppBar(
         title: const Text(
@@ -124,18 +149,41 @@ class _HomePageState extends State<HomePage> {
           ),
           const SizedBox(height: 12),
 
-          /// 📅 네모 + 붙어있는 달력
+          if (startDate != null)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.grey.shade300),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _buildTodayStatus(),
+                    const SizedBox(height: 12),
+                    ElevatedButton(
+                      onPressed: _toggleTodayTaken,
+                      child: Text(
+                        takenMap[todayKey] == true ? '복용 기록 취소' : '오늘 복용했다',
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
+          /// 📅 달력
           TableCalendar(
             locale: 'ko_KR',
-
             firstDay: DateTime.utc(2020, 1, 1),
             lastDay: DateTime.utc(2035, 12, 31),
             focusedDay: focusedDay,
             rowHeight: 48,
-
-            // 달력이랑 월화수 간격
             daysOfWeekHeight: 32,
-
             selectedDayPredicate: (day) => isSameDay(selectedDay, day),
             onDaySelected: (selected, focused) {
               setState(() {
@@ -147,36 +195,20 @@ class _HomePageState extends State<HomePage> {
               titleCentered: true,
               formatButtonVisible: false,
             ),
-            daysOfWeekStyle: const DaysOfWeekStyle(
-              weekdayStyle: TextStyle(fontWeight: FontWeight.bold),
-              weekendStyle: TextStyle(fontWeight: FontWeight.bold),
-            ),
             calendarBuilders: CalendarBuilders(
-              defaultBuilder: (context, day, focused) => _buildSquareCell(day),
-              todayBuilder: (context, day, focused) =>
+              defaultBuilder: (context, day, _) => _buildSquareCell(day),
+              todayBuilder: (context, day, _) =>
                   _buildSquareCell(day, isToday: true),
-              selectedBuilder: (context, day, focused) =>
+              selectedBuilder: (context, day, _) =>
                   _buildSquareCell(day, isSelected: true),
             ),
           ),
-
-          if (selectedDay != null && startDate != null)
-            Padding(
-              padding: const EdgeInsets.all(16),
-              child: Text(
-                _getDayText(selectedDay!),
-                style: const TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
         ],
       ),
     );
   }
 
-  /// ⬛ 네모 셀 (핵심)
+  /// ⬛ 네모 셀 (Stack 적용 → UI 정상)
   Widget _buildSquareCell(
     DateTime day, {
     bool isToday = false,
@@ -186,33 +218,31 @@ class _HomePageState extends State<HomePage> {
     Color borderColor = Colors.grey.shade400;
 
     final type = _getDayType(day);
-    if (type == 'pill') {
-      bgColor = const Color(0xFFE3F2FD); // 복용일
-    } else if (type == 'break') {
-      bgColor = const Color(0xFFFFF3E0); // 휴약일
-    }
+    if (type == 'pill') bgColor = const Color(0xFFE3F2FD);
+    if (type == 'break') bgColor = const Color(0xFFFFF3E0);
 
-    if (isSelected) {
-      borderColor = Colors.blue;
-    } else if (isToday) {
-      borderColor = Colors.red;
-    }
+    if (isSelected) borderColor = Colors.blue;
+    if (isToday) borderColor = Colors.red;
 
     return Container(
-      alignment: Alignment.center,
       decoration: BoxDecoration(
         color: bgColor,
-        border: Border.all(color: borderColor, width: 1),
+        border: Border.all(color: borderColor),
       ),
-      child: Text('${day.day}', style: const TextStyle(fontSize: 14)),
+      child: Stack(
+        children: [
+          Center(
+            child: Text('${day.day}', style: const TextStyle(fontSize: 14)),
+          ),
+          if (takenMap[_dateKey(day)] == true)
+            const Positioned(
+              top: 4,
+              right: 4,
+              child: Text('💊', style: TextStyle(fontSize: 12)),
+            ),
+        ],
+      ),
     );
-  }
-
-  String _getDayText(DateTime day) {
-    final type = _getDayType(day);
-    if (type == 'pill') return '이 날은 💊 복용일이에요';
-    if (type == 'break') return '이 날은 💤 휴약일이에요';
-    return '';
   }
 
   String _getDayType(DateTime day) {
@@ -232,7 +262,6 @@ class _HomePageState extends State<HomePage> {
       firstDate: DateTime(2020),
       lastDate: DateTime(2035),
     );
-
     if (selected != null) {
       setState(() => startDate = selected);
       await _saveSettings();
@@ -240,76 +269,15 @@ class _HomePageState extends State<HomePage> {
   }
 
   void _openPatternSelector() {
-    final pillCtrl = TextEditingController(text: pillDays.toString());
-    final breakCtrl = TextEditingController(text: breakDays.toString());
-
     showModalBottomSheet(
       context: context,
-      isScrollControlled: true,
-      builder: (_) => Padding(
-        padding: EdgeInsets.fromLTRB(
-          16,
-          16,
-          16,
-          MediaQuery.of(context).viewInsets.bottom + 16,
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            _patternTile('21일 복용 / 7일 휴약', 21, 7),
-            _patternTile('24일 복용 / 4일 휴약', 24, 4),
-            _patternTile('28일 연속 복용', 28, 0),
-            const Divider(),
-            const Text('직접 설정', style: TextStyle(fontWeight: FontWeight.bold)),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: pillCtrl,
-                    keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(
-                      labelText: '복용일수',
-                      suffixText: '일',
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: TextField(
-                    controller: breakCtrl,
-                    keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(
-                      labelText: '휴약일수',
-                      suffixText: '일',
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                child: const Text('적용'),
-                onPressed: () async {
-                  final p = int.tryParse(pillCtrl.text);
-                  final b = int.tryParse(breakCtrl.text);
-                  if (p == null || b == null || p <= 0) return;
-
-                  setState(() {
-                    pillDays = p;
-                    breakDays = b;
-                  });
-                  await _saveSettings();
-                  Navigator.pop(context);
-                },
-              ),
-            ),
-          ],
-        ),
+      builder: (_) => Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _patternTile('21일 복용 / 7일 휴약', 21, 7),
+          _patternTile('24일 복용 / 4일 휴약', 24, 4),
+          _patternTile('28일 연속 복용', 28, 0),
+        ],
       ),
     );
   }
@@ -326,5 +294,13 @@ class _HomePageState extends State<HomePage> {
         Navigator.pop(context);
       },
     );
+  }
+
+  /// 오늘 상태 텍스트
+  Widget _buildTodayStatus() {
+    final type = _getDayType(DateTime.now());
+    if (type == 'pill') return const Text('💊 오늘은 복용일입니다');
+    if (type == 'break') return const Text('💤 오늘은 휴약일입니다');
+    return const Text('복용 시작일을 선택해주세요');
   }
 }
