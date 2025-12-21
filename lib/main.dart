@@ -132,6 +132,9 @@ class _HomePageState extends State<HomePage> {
             lastDay: DateTime.utc(2035, 12, 31),
             focusedDay: focusedDay,
             rowHeight: 48,
+
+            daysOfWeekHeight: 32,
+
             selectedDayPredicate: (day) => isSameDay(selectedDay, day),
             onDaySelected: (selected, focused) {
               setState(() {
