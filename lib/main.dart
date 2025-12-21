@@ -4,6 +4,7 @@ import 'package:table_calendar/table_calendar.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:timezone/data/latest.dart' as tz;
+import 'package:timezone/timezone.dart' as tz;
 import 'package:flutter_localizations/flutter_localizations.dart';
 
 final FlutterLocalNotificationsPlugin notifications =
@@ -61,6 +62,9 @@ class _HomePageState extends State<HomePage> {
 
   Map<String, bool> takenMap = {};
 
+  /// 🔔 알람 시간
+  TimeOfDay? alarmTime;
+
   @override
   void initState() {
     super.initState();
@@ -84,7 +88,15 @@ class _HomePageState extends State<HomePage> {
       if (takenStr != null) {
         takenMap = Map<String, bool>.from(jsonDecode(takenStr));
       }
+
+      final hour = prefs.getInt('alarmHour');
+      final minute = prefs.getInt('alarmMinute');
+      if (hour != null && minute != null) {
+        alarmTime = TimeOfDay(hour: hour, minute: minute);
+      }
     });
+
+    await _schedulePillAlarms();
   }
 
   Future<void> _saveSettings() async {
@@ -93,6 +105,10 @@ class _HomePageState extends State<HomePage> {
     await prefs.setInt('breakDays', breakDays);
     if (startDate != null) {
       await prefs.setInt('startDate', startDate!.millisecondsSinceEpoch);
+    }
+    if (alarmTime != null) {
+      await prefs.setInt('alarmHour', alarmTime!.hour);
+      await prefs.setInt('alarmMinute', alarmTime!.minute);
     }
   }
 
@@ -113,6 +129,61 @@ class _HomePageState extends State<HomePage> {
     await _saveTakenMap();
   }
 
+  /// 🔔 복용일만 알람 스케줄
+  Future<void> _schedulePillAlarms() async {
+    if (alarmTime == null || startDate == null) return;
+
+    await notifications.cancelAll();
+
+    final now = DateTime.now();
+
+    for (int i = 0; i < 365; i++) {
+      final day = now.add(Duration(days: i));
+      if (_getDayType(day) != 'pill') continue;
+
+      final scheduled = DateTime(
+        day.year,
+        day.month,
+        day.day,
+        alarmTime!.hour,
+        alarmTime!.minute,
+      );
+
+      if (scheduled.isBefore(now)) continue;
+
+      await notifications.zonedSchedule(
+        i,
+        '💊 약 복용 알림',
+        '오늘 약 복용하실 시간입니다',
+        tz.TZDateTime.from(scheduled, tz.local),
+        const NotificationDetails(
+          android: AndroidNotificationDetails(
+            'pill_channel',
+            '약 복용 알림',
+            importance: Importance.max,
+            priority: Priority.high,
+          ),
+        ),
+        androidAllowWhileIdle: true,
+        uiLocalNotificationDateInterpretation:
+            UILocalNotificationDateInterpretation.absoluteTime,
+      );
+    }
+  }
+
+  Future<void> _pickAlarmTime() async {
+    final picked = await showTimePicker(
+      context: context,
+      initialTime: alarmTime ?? TimeOfDay.now(),
+    );
+
+    if (picked != null) {
+      setState(() => alarmTime = picked);
+      await _saveSettings();
+      await _schedulePillAlarms();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final todayKey = _dateKey(DateTime.now());
@@ -127,6 +198,7 @@ class _HomePageState extends State<HomePage> {
         backgroundColor: Colors.transparent,
         elevation: 0,
         actions: [
+          IconButton(icon: const Icon(Icons.alarm), onPressed: _pickAlarmTime),
           IconButton(
             icon: const Icon(Icons.tune),
             onPressed: _openPatternSelector,
@@ -163,6 +235,14 @@ class _HomePageState extends State<HomePage> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     _buildTodayStatus(),
+                    if (alarmTime != null)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 6),
+                        child: Text(
+                          '⏰ 알람 시간: ${alarmTime!.format(context)}',
+                          style: const TextStyle(fontSize: 13),
+                        ),
+                      ),
                     const SizedBox(height: 12),
                     ElevatedButton(
                       onPressed: _toggleTodayTaken,
@@ -175,7 +255,7 @@ class _HomePageState extends State<HomePage> {
               ),
             ),
 
-          /// 📅 달력 (좌우 여백 적용)
+          /// 📅 달력
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: TableCalendar(
@@ -205,39 +285,8 @@ class _HomePageState extends State<HomePage> {
               ),
             ),
           ),
-
-          const SizedBox(height: 12),
-
-          /// 🎨 범례 (설명)
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Row(
-              children: [
-                _legendItem(const Color(0xFFE3F2FD), '복용일'),
-                const SizedBox(width: 16),
-                _legendItem(const Color(0xFFFFF3E0), '휴약일'),
-              ],
-            ),
-          ),
         ],
       ),
-    );
-  }
-
-  Widget _legendItem(Color color, String text) {
-    return Row(
-      children: [
-        Container(
-          width: 14,
-          height: 14,
-          decoration: BoxDecoration(
-            color: color,
-            border: Border.all(color: Colors.grey.shade400),
-          ),
-        ),
-        const SizedBox(width: 6),
-        Text(text, style: const TextStyle(fontSize: 13)),
-      ],
     );
   }
 
@@ -297,6 +346,7 @@ class _HomePageState extends State<HomePage> {
     if (selected != null) {
       setState(() => startDate = selected);
       await _saveSettings();
+      await _schedulePillAlarms();
     }
   }
 
@@ -307,90 +357,14 @@ class _HomePageState extends State<HomePage> {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-      ),
       builder: (_) => Padding(
-        padding: EdgeInsets.fromLTRB(
-          16,
-          16,
-          16,
-          MediaQuery.of(context).viewInsets.bottom + 16,
-        ),
+        padding: const EdgeInsets.all(16),
         child: Column(
           mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
-              '복용 패턴 설정',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 12),
-
-            /// 프리셋
             _patternTile('21일 복용 / 7일 휴약', 21, 7),
             _patternTile('24일 복용 / 4일 휴약', 24, 4),
             _patternTile('28일 연속 복용', 28, 0),
-
-            const Divider(height: 32),
-
-            /// 직접 설정
-            const Text('직접 설정', style: TextStyle(fontWeight: FontWeight.bold)),
-            const SizedBox(height: 12),
-
-            Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: pillCtrl,
-                    keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(
-                      labelText: '복용일 수',
-                      suffixText: '일',
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: TextField(
-                    controller: breakCtrl,
-                    keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(
-                      labelText: '휴약일 수',
-                      suffixText: '일',
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-
-            const SizedBox(height: 16),
-
-            SizedBox(
-              width: double.infinity,
-              child: FilledButton(
-                onPressed: () async {
-                  final p = int.tryParse(pillCtrl.text);
-                  final b = int.tryParse(breakCtrl.text);
-
-                  if (p == null || b == null || p <= 0 || b < 0) {
-                    // 간단한 방어
-                    return;
-                  }
-
-                  setState(() {
-                    pillDays = p;
-                    breakDays = b;
-                  });
-
-                  await _saveSettings();
-                  Navigator.pop(context);
-                },
-                child: const Text('적용'),
-              ),
-            ),
           ],
         ),
       ),
@@ -406,6 +380,7 @@ class _HomePageState extends State<HomePage> {
           breakDays = b;
         });
         await _saveSettings();
+        await _schedulePillAlarms();
         Navigator.pop(context);
       },
     );
