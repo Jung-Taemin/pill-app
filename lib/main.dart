@@ -301,15 +301,98 @@ class _HomePageState extends State<HomePage> {
   }
 
   void _openPatternSelector() {
+    final pillCtrl = TextEditingController(text: pillDays.toString());
+    final breakCtrl = TextEditingController(text: breakDays.toString());
+
     showModalBottomSheet(
       context: context,
-      builder: (_) => Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          _patternTile('21일 복용 / 7일 휴약', 21, 7),
-          _patternTile('24일 복용 / 4일 휴약', 24, 4),
-          _patternTile('28일 연속 복용', 28, 0),
-        ],
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (_) => Padding(
+        padding: EdgeInsets.fromLTRB(
+          16,
+          16,
+          16,
+          MediaQuery.of(context).viewInsets.bottom + 16,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              '복용 패턴 설정',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 12),
+
+            /// 프리셋
+            _patternTile('21일 복용 / 7일 휴약', 21, 7),
+            _patternTile('24일 복용 / 4일 휴약', 24, 4),
+            _patternTile('28일 연속 복용', 28, 0),
+
+            const Divider(height: 32),
+
+            /// 직접 설정
+            const Text('직접 설정', style: TextStyle(fontWeight: FontWeight.bold)),
+            const SizedBox(height: 12),
+
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: pillCtrl,
+                    keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(
+                      labelText: '복용일 수',
+                      suffixText: '일',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: TextField(
+                    controller: breakCtrl,
+                    keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(
+                      labelText: '휴약일 수',
+                      suffixText: '일',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+
+            const SizedBox(height: 16),
+
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton(
+                onPressed: () async {
+                  final p = int.tryParse(pillCtrl.text);
+                  final b = int.tryParse(breakCtrl.text);
+
+                  if (p == null || b == null || p <= 0 || b < 0) {
+                    // 간단한 방어
+                    return;
+                  }
+
+                  setState(() {
+                    pillDays = p;
+                    breakDays = b;
+                  });
+
+                  await _saveSettings();
+                  Navigator.pop(context);
+                },
+                child: const Text('적용'),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
