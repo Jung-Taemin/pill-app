@@ -133,6 +133,7 @@ class _HomePageState extends State<HomePage> {
             focusedDay: focusedDay,
             rowHeight: 48,
 
+            // 달력이랑 월화수 간격
             daysOfWeekHeight: 32,
 
             selectedDayPredicate: (day) => isSameDay(selectedDay, day),
