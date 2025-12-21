@@ -101,8 +101,10 @@ class _HomePageState extends State<HomePage> {
     await prefs.setString('takenMap', jsonEncode(takenMap));
   }
 
-  Future<void> _toggleTodayTaken() async {
-    final key = _dateKey(DateTime.now());
+  Future<void> _toggleSelectedTaken() async {
+    final targetDay = selectedDay ?? DateTime.now();
+    final key = _dateKey(targetDay);
+
     setState(() {
       if (takenMap[key] == true) {
         takenMap.remove(key);
@@ -110,12 +112,14 @@ class _HomePageState extends State<HomePage> {
         takenMap[key] = true;
       }
     });
+
     await _saveTakenMap();
   }
 
   @override
   Widget build(BuildContext context) {
-    final todayKey = _dateKey(DateTime.now());
+    final targetDay = selectedDay ?? DateTime.now();
+    final targetKey = _dateKey(targetDay);
 
     return Scaffold(
       appBar: AppBar(
@@ -165,9 +169,9 @@ class _HomePageState extends State<HomePage> {
                     _buildTodayStatus(),
                     const SizedBox(height: 12),
                     ElevatedButton(
-                      onPressed: _toggleTodayTaken,
+                      onPressed: _toggleSelectedTaken,
                       child: Text(
-                        takenMap[todayKey] == true ? '복용 취소' : '복용 완료',
+                        takenMap[targetKey] == true ? '복용 취소' : '복용 완료',
                       ),
                     ),
                   ],
