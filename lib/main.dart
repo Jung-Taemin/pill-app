@@ -59,7 +59,6 @@ class _HomePageState extends State<HomePage> {
   DateTime focusedDay = DateTime.now();
   DateTime? selectedDay;
 
-  /// 🔥 날짜별 복용 기록
   Map<String, bool> takenMap = {};
 
   @override
@@ -168,7 +167,7 @@ class _HomePageState extends State<HomePage> {
                     ElevatedButton(
                       onPressed: _toggleTodayTaken,
                       child: Text(
-                        takenMap[todayKey] == true ? '복용 기록 취소' : '오늘 복용했다',
+                        takenMap[todayKey] == true ? '복용 취소' : '복용 완료',
                       ),
                     ),
                   ],
@@ -176,31 +175,48 @@ class _HomePageState extends State<HomePage> {
               ),
             ),
 
-          /// 📅 달력
-          TableCalendar(
-            locale: 'ko_KR',
-            firstDay: DateTime.utc(2020, 1, 1),
-            lastDay: DateTime.utc(2035, 12, 31),
-            focusedDay: focusedDay,
-            rowHeight: 48,
-            daysOfWeekHeight: 32,
-            selectedDayPredicate: (day) => isSameDay(selectedDay, day),
-            onDaySelected: (selected, focused) {
-              setState(() {
-                selectedDay = selected;
-                focusedDay = focused;
-              });
-            },
-            headerStyle: const HeaderStyle(
-              titleCentered: true,
-              formatButtonVisible: false,
+          /// 📅 달력 (좌우 여백 적용)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: TableCalendar(
+              locale: 'ko_KR',
+              firstDay: DateTime.utc(2020, 1, 1),
+              lastDay: DateTime.utc(2035, 12, 31),
+              focusedDay: focusedDay,
+              rowHeight: 48,
+              daysOfWeekHeight: 32,
+              selectedDayPredicate: (day) => isSameDay(selectedDay, day),
+              onDaySelected: (selected, focused) {
+                setState(() {
+                  selectedDay = selected;
+                  focusedDay = focused;
+                });
+              },
+              headerStyle: const HeaderStyle(
+                titleCentered: true,
+                formatButtonVisible: false,
+              ),
+              calendarBuilders: CalendarBuilders(
+                defaultBuilder: (context, day, _) => _buildSquareCell(day),
+                todayBuilder: (context, day, _) =>
+                    _buildSquareCell(day, isToday: true),
+                selectedBuilder: (context, day, _) =>
+                    _buildSquareCell(day, isSelected: true),
+              ),
             ),
-            calendarBuilders: CalendarBuilders(
-              defaultBuilder: (context, day, _) => _buildSquareCell(day),
-              todayBuilder: (context, day, _) =>
-                  _buildSquareCell(day, isToday: true),
-              selectedBuilder: (context, day, _) =>
-                  _buildSquareCell(day, isSelected: true),
+          ),
+
+          const SizedBox(height: 12),
+
+          /// 🎨 범례 (설명)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Row(
+              children: [
+                _legendItem(const Color(0xFFE3F2FD), '복용일'),
+                const SizedBox(width: 16),
+                _legendItem(const Color(0xFFFFF3E0), '휴약일'),
+              ],
             ),
           ),
         ],
@@ -208,7 +224,23 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  /// ⬛ 네모 셀 (Stack 적용 → UI 정상)
+  Widget _legendItem(Color color, String text) {
+    return Row(
+      children: [
+        Container(
+          width: 14,
+          height: 14,
+          decoration: BoxDecoration(
+            color: color,
+            border: Border.all(color: Colors.grey.shade400),
+          ),
+        ),
+        const SizedBox(width: 6),
+        Text(text, style: const TextStyle(fontSize: 13)),
+      ],
+    );
+  }
+
   Widget _buildSquareCell(
     DateTime day, {
     bool isToday = false,
@@ -296,7 +328,6 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  /// 오늘 상태 텍스트
   Widget _buildTodayStatus() {
     final type = _getDayType(DateTime.now());
     if (type == 'pill') return const Text('💊 오늘은 복용일입니다');
